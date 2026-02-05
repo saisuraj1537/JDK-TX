@@ -96,7 +96,7 @@ let ws;
 let wsReady = false;
 
 function connectWebSocket() {
-  ws = new WebSocket("wss://157.50.90.151/control");
+  ws = new WebSocket("wss://157.50.90.151:8000/control");
 
   ws.onopen = () => {
     wsReady = true;
@@ -196,5 +196,6 @@ joystick(document.getElementById("rightJoy"), (x, y) => {
 
 </body>
 </html>
+
 
 
