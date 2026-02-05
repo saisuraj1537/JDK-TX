@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Internet Drone Control</title>
+
+<style>
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #020617;
+    color: #e5e7eb;
+    text-align: center;
+  }
+
+  h1 {
+    margin: 20px 0;
+  }
+
+  .joysticks {
+    display: flex;
+    justify-content: space-around;
+    margin-top: 40px;
+  }
+
+  .joystick {
+    width: 160px;
+    height: 160px;
+    background: #1e293b;
+    border-radius: 50%;
+    position: relative;
+    touch-action: none;
+  }
+
+  .stick {
+    width: 60px;
+    height: 60px;
+    background: #38bdf8;
+    border-radius: 50%;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .buttons {
+    margin-top: 30px;
+  }
+
+  button {
+    background: #22c55e;
+    border: none;
+    padding: 12px 20px;
+    margin: 8px;
+    font-size: 16px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  button.danger {
+    background: #ef4444;
+  }
+
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+</style>
+</head>
+
+<body>
+
+<h1>🚁 Internet Drone Controller</h1>
+
+<div class="joysticks">
+  <div class="joystick" id="leftJoy">
+    <div class="stick"></div>
+  </div>
+
+  <div class="joystick" id="rightJoy">
+    <div class="stick"></div>
+  </div>
+</div>
+
+<div class="buttons">
+  <button onclick="sendAction('arm')">ARM</button>
+  <button class="danger" onclick="sendAction('disarm')">DISARM</button><br>
+  <button onclick="sendAction('takeoff')">TAKEOFF</button>
+  <button class="danger" onclick="sendAction('land')">LAND</button>
+</div>
+
+
+<script>
+/* ===== WebSocket ===== */
+let ws;
+let wsReady = false;
+
+function connectWebSocket() {
+  ws = new WebSocket("ws://localhost:8000/control");
+
+  ws.onopen = () => {
+    wsReady = true;
+    console.log("✅ WebSocket CONNECTED");
+  };
+
+  ws.onclose = () => {
+    wsReady = false;
+    console.log("🔴 WebSocket DISCONNECTED");
+  };
+
+  ws.onerror = (e) => {
+    console.error("❌ WebSocket ERROR", e);
+  };
+}
+
+connectWebSocket();
+
+/* ===== Control State ===== */
+const control = {
+  throttle: 0,
+  yaw: 0,
+  pitch: 0,
+  roll: 0
+};
+
+/* ===== Send Continuous Control (SAFE) ===== */
+setInterval(() => {
+  if (!wsReady) return;
+
+  ws.send(JSON.stringify({
+    type: "control",
+    throttle: control.throttle,
+    yaw: control.yaw,
+    pitch: control.pitch,
+    roll: control.roll
+  }));
+}, 100);
+
+/* ===== Send Actions (SAFE) ===== */
+function sendAction(action) {
+  if (!wsReady) return;
+
+  ws.send(JSON.stringify({
+    type: "action",
+    action: action   // already lowercase now
+  }));
+}
+
+
+/* ===== Joystick Logic ===== */
+function joystick(element, callback) {
+  const stick = element.querySelector(".stick");
+  const radius = element.offsetWidth / 2;
+  let dragging = false;
+
+  element.addEventListener("pointerdown", () => dragging = true);
+  element.addEventListener("pointerup", reset);
+  element.addEventListener("pointerleave", reset);
+  element.addEventListener("pointermove", e => {
+    if (!dragging) return;
+
+    const rect = element.getBoundingClientRect();
+    let x = e.clientX - rect.left - radius;
+    let y = e.clientY - rect.top - radius;
+
+    const dist = Math.min(radius, Math.hypot(x, y));
+    const angle = Math.atan2(y, x);
+
+    x = Math.cos(angle) * dist;
+    y = Math.sin(angle) * dist;
+
+    stick.style.transform =
+      `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+
+    callback(x / radius, y / radius);
+  });
+
+  function reset() {
+    dragging = false;
+    stick.style.transform = "translate(-50%, -50%)";
+    callback(0, 0);
+  }
+}
+
+/* ===== Map Controls ===== */
+joystick(document.getElementById("leftJoy"), (x, y) => {
+  control.yaw = x;
+  control.throttle = -y;
+});
+
+joystick(document.getElementById("rightJoy"), (x, y) => {
+  control.roll = x;
+  control.pitch = -y;
+});
+</script>
+
+</body>
+</html>
