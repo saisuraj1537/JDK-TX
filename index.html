@@ -1,218 +1,134 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Internet Drone Control</title>
+import asyncio, websockets, json
+from pymavlink import mavutil
 
-<style>
-  body {
-    margin: 0;
-    font-family: Arial, sans-serif;
-    background: #020617;
-    color: #e5e7eb;
-    text-align: center;
-  }
+master = mavutil.mavlink_connection('/dev/ttyACM0', baud=115200)
 
-  h1 {
-    margin: 20px 0;
-  }
+print("Waiting for heartbeat...")
+master.wait_heartbeat()
+print("✅ Connected")
 
-  .joysticks {
-    display: flex;
-    justify-content: space-around;
-    margin-top: 40px;
-  }
+def set_mode(mode):
+    master.set_mode(master.mode_mapping()[mode])
 
-  .joystick {
-    width: 160px;
-    height: 160px;
-    background: #1e293b;
-    border-radius: 50%;
-    position: relative;
-    touch-action: none;
-  }
+def arm():
+    set_mode("GUIDED")
+    master.arducopter_arm()
+    master.motors_armed_wait()
+    print("✅ Armed")
 
-  .stick {
-    width: 60px;
-    height: 60px;
-    background: #38bdf8;
-    border-radius: 50%;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-  }
+def disarm():
+    master.arducopter_disarm()
 
-  .buttons {
-    margin-top: 30px;
-  }
+def wait_for_gps():
+    print("Waiting GPS...")
+    while True:
+        msg = master.recv_match(type='GPS_RAW_INT', blocking=True)
+        if msg.fix_type >= 3:
+            print("✅ GPS LOCK")
+            break
 
-  button {
-    background: #22c55e;
-    border: none;
-    padding: 12px 20px;
-    margin: 8px;
-    font-size: 16px;
-    border-radius: 6px;
-    cursor: pointer;
-  }
+def send_rc(t,y,p,r):
+    def m(v): return int(1500+v*500)
+    master.mav.rc_channels_override_send(
+        master.target_system,
+        master.target_component,
+        m(r), m(p), m(t), m(y),
+        0,0,0,0
+    )
 
-  button.danger {
-    background: #ef4444;
-  }
+async def telemetry(ws):
+    while True:
+        msg = master.recv_match(blocking=False)
 
-  button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-</style>
-</head>
+        if msg:
+            if msg.get_type()=="ATTITUDE":
+                await ws.send(json.dumps({"type":"telemetry","yaw":msg.yaw}))
 
-<body>
+            if msg.get_type()=="GLOBAL_POSITION_INT":
+                await ws.send(json.dumps({
+                    "type":"telemetry",
+                    "alt":msg.relative_alt/1000,
+                    "heading":msg.hdg/100
+                }))
 
-<h1>🚁 Internet Drone Controller</h1>
+        await asyncio.sleep(0.05)
 
-<div class="joysticks">
-  <div class="joystick" id="leftJoy">
-    <div class="stick"></div>
-  </div>
+async def status(ws):
+    while True:
+        await ws.send(json.dumps({
+            "type":"status",
+            "state":{
+                "armed": master.motors_armed(),
+                "flying": False
+            },
+            "mode": master.flightmode
+        }))
+        await asyncio.sleep(1)
 
-  <div class="joystick" id="rightJoy">
-    <div class="stick"></div>
-  </div>
-</div>
+async def connect():
+    uri="wss://jdk-server.onrender.com/control"
 
-<div class="buttons">
-  <button onclick="sendAction('arm')">ARM</button>
-  <button class="danger" onclick="sendAction('disarm')">DISARM</button><br>
-  <button onclick="sendAction('takeoff')">TAKEOFF</button>
-  <button class="danger" onclick="sendAction('land')">LAND</button>
-</div>
+    while True:
+        try:
+            async with websockets.connect(uri) as ws:
+                print("🌐 Connected")
 
+                asyncio.create_task(telemetry(ws))
+                asyncio.create_task(status(ws))
 
-<script>
-/* ===== WebSocket ===== */
-let ws;
-let wsReady = false;
+                while True:
+                    msg = json.loads(await ws.recv())
 
-function connectWebSocket() {
-  ws = new WebSocket("wss://jdk-server.onrender.com/control");
+                    if msg["type"]=="action":
+                        a = msg["action"]
 
+                        if a=="arm":
+                            arm()
 
-  ws.onopen = () => {
-    wsReady = true;
-    console.log("✅ WebSocket CONNECTED");
-  };
+                        elif a=="disarm":
+                            disarm()
 
-  ws.onclose = () => {
-    wsReady = false;
-    console.log("🔴 WebSocket DISCONNECTED");
-  };
+                        elif a=="takeoff":
+                            alt = msg.get("alt",2)
 
-  ws.onerror = (e) => {
-    console.error("❌ WebSocket ERROR", e);
-  };
-}
+                            wait_for_gps()
+                            arm()
 
-connectWebSocket();
+                            print(f"Takeoff to {alt}m")
 
-/* ===== Control State ===== */
-const control = {
-  throttle: 0,
-  yaw: 0,
-  pitch: 0,
-  roll: 0
-};
+                            master.mav.command_long_send(
+                                master.target_system,
+                                master.target_component,
+                                mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+                                0,
+                                0,0,0,0,0,0,
+                                alt
+                            )
 
-/* ===== Send Continuous Control (SAFE) ===== */
-setInterval(() => {
-  if (!wsReady) return;
+                            # wait until altitude reached
+                            while True:
+                                msg_alt = master.recv_match(type='GLOBAL_POSITION_INT', blocking=True)
+                                current_alt = msg_alt.relative_alt / 1000.0
 
-  ws.send(JSON.stringify({
-    type: "control",
-    throttle: control.throttle,
-    yaw: control.yaw,
-    pitch: control.pitch,
-    roll: control.roll
-  }));
-}, 100);
+                                if current_alt >= alt * 0.9:
+                                    break
 
-/* ===== Send Actions (SAFE) ===== */
-function sendAction(action) {
-  if (!wsReady) return;
+                            print("Switching to LOITER")
+                            set_mode("LOITER")
 
-  ws.send(JSON.stringify({
-    type: "action",
-    action: action   // already lowercase now
-  }));
-}
+                        elif a=="land":
+                            set_mode("LAND")
 
+                    elif msg["type"]=="control":
+                        send_rc(
+                            msg["throttle"],
+                            msg["yaw"],
+                            msg["pitch"],
+                            msg["roll"]
+                        )
 
-/* ===== Joystick Logic ===== */
-function joystick(element, callback) {
-  const stick = element.querySelector(".stick");
-  const radius = element.offsetWidth / 2;
-  let dragging = false;
+        except Exception as e:
+            print("Error:", e)
+            await asyncio.sleep(5)
 
-  element.addEventListener("pointerdown", () => dragging = true);
-  element.addEventListener("pointerup", reset);
-  element.addEventListener("pointerleave", reset);
-  element.addEventListener("pointermove", e => {
-    if (!dragging) return;
-
-    const rect = element.getBoundingClientRect();
-    let x = e.clientX - rect.left - radius;
-    let y = e.clientY - rect.top - radius;
-
-    const dist = Math.min(radius, Math.hypot(x, y));
-    const angle = Math.atan2(y, x);
-
-    x = Math.cos(angle) * dist;
-    y = Math.sin(angle) * dist;
-
-    stick.style.transform =
-      `translate(${x}px, ${y}px) translate(-50%, -50%)`;
-
-    callback(x / radius, y / radius);
-  });
-
-  function reset() {
-    dragging = false;
-    stick.style.transform = "translate(-50%, -50%)";
-    callback(0, 0);
-  }
-}
-
-/* ===== Map Controls ===== */
-joystick(document.getElementById("leftJoy"), (x, y) => {
-  control.yaw = x;
-  control.throttle = -y;
-});
-
-joystick(document.getElementById("rightJoy"), (x, y) => {
-  control.roll = x;
-  control.pitch = -y;
-});
-</script>
-
-</body>
-</html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+asyncio.run(connect())
