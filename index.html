@@ -1,171 +1,821 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Drone Cockpit</title>
-
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
-body { background:#020617; color:#e5e7eb; text-align:center; font-family:Arial; }
+  :root {
+    --bg: #020917;
+    --panel: #0a1628;
+    --border: #1e3a5f;
+    --accent: #00d4ff;
+    --accent2: #00ff88;
+    --warn: #ff9500;
+    --danger: #ff3b30;
+    --text: #c8dff0;
+    --dim: #4a6a8a;
+    --glow: 0 0 12px rgba(0,212,255,0.4);
+  }
 
-.joysticks { display:flex; justify-content:space-around; margin-top:30px; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
 
-.joystick {
-  width:160px; height:160px;
-  background:#1e293b; border-radius:50%; position:relative;
-}
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+  }
 
-.stick {
-  width:60px; height:60px;
-  background:#38bdf8; border-radius:50%;
-  position:absolute; top:50%; left:50%;
-  transform:translate(-50%,-50%);
-}
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(0,80,160,0.15) 0%, transparent 70%),
+      repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(0,212,255,0.03) 40px),
+      repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(0,212,255,0.03) 40px);
+    pointer-events: none;
+    z-index: 0;
+  }
 
-button { padding:10px 16px; margin:6px; border:none; border-radius:6px; }
-.safe { background:#22c55e; }
-.danger { background:#ef4444; }
-button:disabled { opacity:0.5; }
+  /* HEADER */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10,22,40,0.8);
+    backdrop-filter: blur(8px);
+    position: sticky; top: 0; z-index: 100;
+  }
+
+  .logo {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900; font-size: 1.1rem;
+    color: var(--accent);
+    letter-spacing: 3px;
+    text-shadow: var(--glow);
+  }
+
+  .status-bar {
+    display: flex; gap: 20px; align-items: center; font-size: 0.75rem;
+  }
+
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--danger);
+    display: inline-block; margin-right: 6px;
+    box-shadow: 0 0 8px currentColor;
+    transition: background 0.3s;
+  }
+  .status-dot.connected { background: var(--accent2); }
+  .status-dot.armed { background: var(--warn); }
+
+  /* MAIN GRID */
+  main {
+    position: relative; z-index: 1;
+    flex: 1; display: grid;
+    grid-template-columns: 220px 1fr 220px;
+    grid-template-rows: auto 1fr auto;
+    gap: 0;
+    max-width: 1200px; width: 100%;
+    margin: 0 auto; padding: 16px;
+    gap: 12px;
+  }
+
+  /* PANELS */
+  .panel {
+    background: rgba(10,22,40,0.7);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    backdrop-filter: blur(4px);
+  }
+
+  .panel-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.6rem; letter-spacing: 3px;
+    color: var(--dim); text-transform: uppercase;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+
+  /* TELEMETRY */
+  .telem-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .telem-item {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 8px;
+  }
+
+  .telem-label {
+    font-size: 0.6rem; color: var(--dim);
+    letter-spacing: 2px; text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .telem-value {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.1rem; font-weight: 700;
+    color: var(--accent);
+    text-shadow: var(--glow);
+  }
+
+  .telem-unit { font-size: 0.6rem; color: var(--dim); margin-left: 2px; }
+
+  /* CENTER PANEL */
+  .center-panel {
+    grid-column: 2;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+  }
+
+  /* COMPASS */
+  .compass-wrap { position: relative; width: 120px; height: 120px; }
+
+  .compass {
+    width: 120px; height: 120px; border-radius: 50%;
+    border: 2px solid var(--border);
+    background: radial-gradient(circle, rgba(0,20,40,0.9) 0%, rgba(0,5,15,0.95) 100%);
+    position: relative; overflow: hidden;
+    box-shadow: var(--glow), inset 0 0 20px rgba(0,0,0,0.5);
+  }
+
+  .compass-ring {
+    position: absolute; inset: 6px; border-radius: 50%;
+    border: 1px solid rgba(0,212,255,0.2);
+  }
+
+  .compass-needle {
+    position: absolute; top: 50%; left: 50%;
+    width: 2px; height: 44px;
+    margin-left: -1px; margin-top: -44px;
+    transform-origin: bottom center;
+    transition: transform 0.3s ease;
+  }
+
+  .compass-needle::before {
+    content: '';
+    position: absolute; top: 0; left: -4px;
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 20px solid var(--danger);
+  }
+
+  .compass-needle::after {
+    content: '';
+    position: absolute; bottom: 0; left: -4px;
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 24px solid var(--text);
+  }
+
+  .compass-n {
+    position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+    font-size: 0.6rem; color: var(--danger); font-weight: bold;
+  }
+
+  .compass-center {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+  }
+
+  /* HORIZON */
+  .horizon {
+    width: 100%; height: 80px;
+    border: 1px solid var(--border);
+    border-radius: 6px; overflow: hidden;
+    position: relative; background: #020917;
+  }
+
+  .horizon-sky {
+    position: absolute; width: 100%; height: 50%;
+    background: linear-gradient(180deg, #001433 0%, #002255 100%);
+    transition: transform 0.1s ease;
+    transform-origin: center;
+  }
+
+  .horizon-ground {
+    position: absolute; bottom: 0; width: 100%; height: 50%;
+    background: linear-gradient(180deg, #1a0f00 0%, #0d0800 100%);
+  }
+
+  .horizon-line {
+    position: absolute; top: 50%; left: 0; right: 0;
+    height: 1px; background: var(--accent2);
+    box-shadow: 0 0 4px var(--accent2);
+  }
+
+  .horizon-center {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px; height: 2px; background: var(--warn);
+  }
+
+  /* JOYSTICKS */
+  .joysticks {
+    display: flex; gap: 24px; align-items: center;
+    padding: 12px 0;
+  }
+
+  .joystick-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .joystick-label { font-size: 0.6rem; color: var(--dim); letter-spacing: 2px; }
+
+  .joystick {
+    width: 150px; height: 150px;
+    background: radial-gradient(circle, #0f2040 0%, #050e1f 100%);
+    border: 2px solid var(--border);
+    border-radius: 50%;
+    position: relative;
+    touch-action: none;
+    cursor: crosshair;
+    box-shadow: 0 0 20px rgba(0,0,0,0.5), inset 0 0 30px rgba(0,0,0,0.3);
+  }
+
+  .joystick::before {
+    content: '';
+    position: absolute; top: 50%; left: 10px; right: 10px;
+    height: 1px; background: rgba(0,212,255,0.1);
+    transform: translateY(-50%);
+  }
+
+  .joystick::after {
+    content: '';
+    position: absolute; left: 50%; top: 10px; bottom: 10px;
+    width: 1px; background: rgba(0,212,255,0.1);
+    transform: translateX(-50%);
+  }
+
+  .stick {
+    width: 52px; height: 52px;
+    background: radial-gradient(circle at 35% 35%, #2a6090, #0d3055);
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 16px rgba(0,212,255,0.5);
+    transition: box-shadow 0.1s;
+    pointer-events: none;
+  }
+
+  .stick.active {
+    box-shadow: 0 0 24px rgba(0,212,255,0.8);
+  }
+
+  /* CONTROLS */
+  .controls-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px; width: 100%;
+  }
+
+  .btn {
+    padding: 12px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: rgba(0,0,0,0.4);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.75rem; letter-spacing: 2px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+  }
+
+  .btn:hover:not(:disabled) {
+    background: rgba(0,212,255,0.1);
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: var(--glow);
+  }
+
+  .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .btn.arm { border-color: var(--accent2); color: var(--accent2); }
+  .btn.arm:hover:not(:disabled) { background: rgba(0,255,136,0.1); box-shadow: 0 0 12px rgba(0,255,136,0.3); }
+  .btn.disarm { border-color: var(--danger); color: var(--danger); }
+  .btn.disarm:hover:not(:disabled) { background: rgba(255,59,48,0.1); box-shadow: 0 0 12px rgba(255,59,48,0.3); }
+  .btn.takeoff { border-color: var(--accent); color: var(--accent); }
+  .btn.land { border-color: var(--warn); color: var(--warn); }
+  .btn.land:hover:not(:disabled) { background: rgba(255,149,0,0.1); box-shadow: 0 0 12px rgba(255,149,0,0.3); }
+
+  /* ALTITUDE INPUT */
+  .alt-input-wrap {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 12px;
+  }
+
+  .alt-input-wrap label { font-size: 0.65rem; color: var(--dim); letter-spacing: 2px; }
+
+  #altitude {
+    background: transparent; border: none;
+    color: var(--accent); font-family: 'Orbitron', sans-serif;
+    font-size: 1rem; width: 60px; text-align: right;
+    outline: none;
+  }
+
+  .alt-unit { font-size: 0.65rem; color: var(--dim); }
+
+  /* KEYBOARD HINT */
+  .key-hints {
+    display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+  }
+
+  .key { 
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 0.6rem; color: var(--dim);
+  }
+
+  .kbd {
+    background: rgba(0,0,0,0.5);
+    border: 1px solid var(--border);
+    border-radius: 3px; padding: 1px 5px;
+    color: var(--text); font-size: 0.6rem;
+  }
+
+  /* MODE BADGE */
+  .mode-badge {
+    display: inline-block; padding: 4px 12px;
+    border: 1px solid var(--accent);
+    border-radius: 4px; font-size: 0.7rem;
+    color: var(--accent); letter-spacing: 3px;
+    font-family: 'Orbitron', sans-serif;
+    background: rgba(0,212,255,0.05);
+    box-shadow: var(--glow);
+  }
+
+  /* WARN FLASH */
+  @keyframes warn-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .flying .mode-badge { animation: warn-pulse 1.5s infinite; }
+
+  /* RC BARS */
+  .rc-bars { display: flex; flex-direction: column; gap: 6px; }
+
+  .rc-bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .rc-bar-label { font-size: 0.6rem; color: var(--dim); width: 60px; letter-spacing: 1px; }
+
+  .rc-bar-bg {
+    flex: 1; height: 6px; background: rgba(0,0,0,0.5);
+    border: 1px solid var(--border); border-radius: 3px;
+    position: relative; overflow: hidden;
+  }
+
+  .rc-bar-fill {
+    position: absolute; top: 0; height: 100%;
+    background: var(--accent); border-radius: 3px;
+    transition: left 0.05s, width 0.05s;
+  }
+
+  .rc-bar-val { font-size: 0.6rem; color: var(--dim); width: 38px; text-align: right; }
+
+  /* LAYOUT */
+  .left-panel { grid-column: 1; }
+  .right-panel { grid-column: 3; }
+  .center-panel { grid-column: 2; }
+
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; }
+    .left-panel, .right-panel, .center-panel { grid-column: 1; }
+  }
 </style>
 </head>
-
 <body>
 
-<h2>🚁 Drone Cockpit</h2>
+<header>
+  <div class="logo">◈ DRONEOPS</div>
+  <div class="status-bar">
+    <div>
+      <span class="status-dot" id="connDot"></span>
+      <span id="connStatus">DISCONNECTED</span>
+    </div>
+    <div>
+      <span class="status-dot" id="armDot"></span>
+      <span id="armStatus">DISARMED</span>
+    </div>
+    <div id="modeBadge" class="mode-badge">--</div>
+  </div>
+</header>
 
-<div class="joysticks">
-  <div class="joystick" id="leftJoy"><div class="stick"></div></div>
-  <div class="joystick" id="rightJoy"><div class="stick"></div></div>
-</div>
+<main>
 
-<br>
-<input type="number" id="altitude" value="2" min="1" max="50">
-<br><br>
+  <!-- LEFT: TELEMETRY -->
+  <div class="panel left-panel">
+    <div class="panel-title">Telemetry</div>
+    <div class="telem-grid">
+      <div class="telem-item">
+        <div class="telem-label">Altitude</div>
+        <div class="telem-value"><span id="tAlt">0.00</span><span class="telem-unit">m</span></div>
+      </div>
+      <div class="telem-item">
+        <div class="telem-label">Heading</div>
+        <div class="telem-value"><span id="tHeading">0</span><span class="telem-unit">°</span></div>
+      </div>
+      <div class="telem-item">
+        <div class="telem-label">Yaw</div>
+        <div class="telem-value"><span id="tYaw">0.00</span><span class="telem-unit">r</span></div>
+      </div>
+      <div class="telem-item">
+        <div class="telem-label">Pitch</div>
+        <div class="telem-value"><span id="tPitch">0.00</span><span class="telem-unit">r</span></div>
+      </div>
+    </div>
 
-<button id="armBtn" class="safe">ARM</button>
-<button id="disarmBtn" class="danger" disabled>DISARM</button>
+    <br>
 
-<br>
+    <div class="panel-title">RC Output</div>
+    <div class="rc-bars">
+      <div class="rc-bar-wrap">
+        <span class="rc-bar-label">THROTTLE</span>
+        <div class="rc-bar-bg"><div class="rc-bar-fill" id="rcT" style="left:50%;width:0%"></div></div>
+        <span class="rc-bar-val" id="rcTv">1500</span>
+      </div>
+      <div class="rc-bar-wrap">
+        <span class="rc-bar-label">YAW</span>
+        <div class="rc-bar-bg"><div class="rc-bar-fill" id="rcY" style="left:50%;width:0%"></div></div>
+        <span class="rc-bar-val" id="rcYv">1500</span>
+      </div>
+      <div class="rc-bar-wrap">
+        <span class="rc-bar-label">PITCH</span>
+        <div class="rc-bar-bg"><div class="rc-bar-fill" id="rcP" style="left:50%;width:0%"></div></div>
+        <span class="rc-bar-val" id="rcPv">1500</span>
+      </div>
+      <div class="rc-bar-wrap">
+        <span class="rc-bar-label">ROLL</span>
+        <div class="rc-bar-bg"><div class="rc-bar-fill" id="rcR" style="left:50%;width:0%"></div></div>
+        <span class="rc-bar-val" id="rcRv">1500</span>
+      </div>
+    </div>
+  </div>
 
-<button id="takeoffBtn" disabled>TAKEOFF</button>
-<button id="landBtn" class="danger" disabled>LAND</button>
+  <!-- CENTER -->
+  <div class="center-panel">
 
-<h3>📡 Telemetry</h3>
-<p>Mode: <span id="mode">--</span></p>
-<p>Altitude: <span id="alt">0</span></p>
-<p>Yaw: <span id="yawVal">0</span></p>
-<p>Heading: <span id="heading">0</span></p>
+    <!-- Horizon + Compass row -->
+    <div class="panel" style="width:100%">
+      <div style="display:flex;gap:16px;align-items:center">
+        <div>
+          <div class="panel-title">Attitude</div>
+          <div class="horizon" id="horizon">
+            <div class="horizon-sky" id="hSky"></div>
+            <div class="horizon-ground"></div>
+            <div class="horizon-line"></div>
+            <div class="horizon-center"></div>
+          </div>
+        </div>
+        <div style="flex:1">
+          <div class="panel-title">Compass</div>
+          <div style="display:flex;justify-content:center">
+            <div class="compass">
+              <div class="compass-ring"></div>
+              <div class="compass-n">N</div>
+              <div class="compass-needle" id="compassNeedle"></div>
+              <div class="compass-center"></div>
+            </div>
+          </div>
+        </div>
+        <div style="flex:1">
+          <div class="panel-title">Mode</div>
+          <div id="modeBadge2" class="mode-badge" style="display:block;text-align:center;margin-bottom:8px">--</div>
+          <div class="telem-item">
+            <div class="telem-label">Setpoint Alt</div>
+            <div class="alt-input-wrap" style="border:none;padding:0;background:none">
+              <input type="number" id="altitude" value="2" min="1" max="50" step="0.5">
+              <span class="alt-unit">m</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Joysticks -->
+    <div class="panel" style="width:100%">
+      <div class="panel-title">Manual Control</div>
+      <div class="joysticks">
+        <div class="joystick-wrap">
+          <div class="joystick" id="leftJoy"><div class="stick" id="leftStick"></div></div>
+          <div class="joystick-label">THR / YAW</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:16px">
+          <!-- Action buttons -->
+          <div class="controls-grid">
+            <button class="btn arm" id="armBtn">▶ ARM</button>
+            <button class="btn disarm" id="disarmBtn" disabled>■ DISARM</button>
+            <button class="btn takeoff" id="takeoffBtn" disabled>↑ TAKEOFF</button>
+            <button class="btn land" id="landBtn" disabled>↓ LAND</button>
+          </div>
+        </div>
+        <div class="joystick-wrap">
+          <div class="joystick" id="rightJoy"><div class="stick" id="rightStick"></div></div>
+          <div class="joystick-label">PITCH / ROLL</div>
+        </div>
+      </div>
+
+      <!-- Keyboard hints -->
+      <div class="key-hints" style="margin-top:8px">
+        <span class="key"><span class="kbd">W/S</span> Throttle</span>
+        <span class="key"><span class="kbd">A/D</span> Yaw</span>
+        <span class="key"><span class="kbd">↑↓</span> Pitch</span>
+        <span class="key"><span class="kbd">←→</span> Roll</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT: SYSTEM -->
+  <div class="panel right-panel">
+    <div class="panel-title">System Log</div>
+    <div id="log" style="font-size:0.65rem;color:var(--dim);height:200px;overflow-y:auto;line-height:1.6"></div>
+    <br>
+    <div class="panel-title">Network</div>
+    <div style="font-size:0.65rem;color:var(--dim)">
+      <div>Latency: <span id="latency" style="color:var(--accent2)">--</span>ms</div>
+      <div>Packets: <span id="pktCount" style="color:var(--accent)">0</span></div>
+      <div>Reconnects: <span id="reconnects" style="color:var(--warn)">0</span></div>
+    </div>
+  </div>
+
+</main>
 
 <script>
-let ws;
-let control = { throttle:0, yaw:0, pitch:0, roll:0 };
-let droneState = { armed:false, flying:false };
-let loopStarted = false;
-
-function safeSend(data){
-  if(!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify(data));
-}
-
-function connectWS(){
-  ws = new WebSocket("wss://jdk-server.onrender.com/control");
-
-  ws.onopen = ()=>{
-    console.log("✅ Connected");
-    startLoop();
-  };
-
-  ws.onclose = ()=>{
-    console.log("🔁 Reconnecting...");
-    setTimeout(connectWS,2000);
-  };
-
-  ws.onmessage = e=>{
-    const msg = JSON.parse(e.data);
-
-    if(msg.type==="telemetry"){
-      if(msg.alt!==undefined) alt.innerText = msg.alt.toFixed(2);
-      if(msg.yaw!==undefined) yawVal.innerText = msg.yaw.toFixed(2);
-      if(msg.heading!==undefined) heading.innerText = msg.heading;
-    }
-
-    if(msg.type==="status"){
-      droneState = msg.state;
-      mode.innerText = msg.mode;
-      updateButtons();
-    }
-  };
-}
-connectWS();
-
-function startLoop(){
-  if(loopStarted) return;
-  loopStarted = true;
-
-  setInterval(()=>{
-    safeSend({type:"control", ...control});
-  },50);
-}
-
-armBtn.onclick = ()=> safeSend({type:"action", action:"arm"});
-disarmBtn.onclick = ()=> safeSend({type:"action", action:"disarm"});
-landBtn.onclick = ()=> safeSend({type:"action", action:"land"});
-
-takeoffBtn.onclick = ()=>{
-  let altVal = parseFloat(document.getElementById("altitude").value);
-  safeSend({type:"action", action:"takeoff", alt:altVal});
+/* ─── STATE ─────────────────────────────────────── */
+const state = {
+  ws: null,
+  connected: false,
+  armed: false,
+  flying: false,
+  reconnects: 0,
+  pktCount: 0,
+  pingTs: 0,
+  reconnectDelay: 1000,
 };
 
-function updateButtons(){
-  armBtn.disabled = droneState.armed;
-  disarmBtn.disabled = !droneState.armed;
-  takeoffBtn.disabled = !droneState.armed || droneState.flying;
-  landBtn.disabled = !droneState.flying;
+// Control values: -1 to 1
+const ctrl = { throttle:0, yaw:0, pitch:0, roll:0 };
+const DEADBAND = 0.02;
+const SEND_HZ  = 20; // 20 Hz is plenty; server was 50Hz = wasteful
+
+/* ─── LOG ────────────────────────────────────────── */
+function log(msg, color='var(--dim)') {
+  const el = document.getElementById('log');
+  const t = new Date().toLocaleTimeString('en', {hour12:false});
+  el.innerHTML += `<div style="color:${color}">[${t}] ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+  // cap log at 100 entries
+  while (el.children.length > 100) el.removeChild(el.firstChild);
 }
 
-/* Joystick */
-function joystick(el, cb){
-  const stick = el.querySelector(".stick");
-  const r = el.offsetWidth/2;
-  let drag=false;
+/* ─── WEBSOCKET ──────────────────────────────────── */
+function connect() {
+  if (state.ws) state.ws.close();
+  state.ws = new WebSocket("wss://jdk-server.onrender.com/control");
 
-  el.onpointerdown=()=>drag=true;
-  el.onpointerup=reset;
-  el.onpointerleave=reset;
-
-  el.onpointermove=e=>{
-    if(!drag) return;
-
-    const rect=el.getBoundingClientRect();
-    let x=e.clientX-rect.left-r;
-    let y=e.clientY-rect.top-r;
-
-    const d=Math.min(r, Math.hypot(x,y));
-    const a=Math.atan2(y,x);
-
-    x=Math.cos(a)*d;
-    y=Math.sin(a)*d;
-
-    stick.style.transform=`translate(${x}px,${y}px) translate(-50%,-50%)`;
-    cb(x/r,y/r);
+  state.ws.onopen = () => {
+    state.connected = true;
+    state.reconnectDelay = 1000;
+    updateConnUI(true);
+    log("Connected to relay server", "var(--accent2)");
+    // send role identification
+    safeSend({ type: "role", role: "browser" });
   };
 
-  function reset(){
-    drag=false;
-    stick.style.transform="translate(-50%,-50%)";
-    cb(0,0);
+  state.ws.onclose = () => {
+    state.connected = false;
+    updateConnUI(false);
+    log(`Reconnecting in ${state.reconnectDelay/1000}s…`, "var(--warn)");
+    setTimeout(connect, state.reconnectDelay);
+    // exponential backoff, cap at 30s
+    state.reconnectDelay = Math.min(state.reconnectDelay * 1.5, 30000);
+    state.reconnects++;
+    document.getElementById('reconnects').textContent = state.reconnects;
+  };
+
+  state.ws.onerror = (e) => log("WS error", "var(--danger)");
+
+  state.ws.onmessage = (e) => {
+    state.pktCount++;
+    document.getElementById('pktCount').textContent = state.pktCount;
+
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }
+
+    if (msg.type === "pong") {
+      document.getElementById('latency').textContent = Date.now() - state.pingTs;
+      return;
+    }
+
+    if (msg.type === "telemetry") {
+      if (msg.alt     !== undefined) { document.getElementById('tAlt').textContent = msg.alt.toFixed(2); }
+      if (msg.yaw     !== undefined) { document.getElementById('tYaw').textContent = msg.yaw.toFixed(2); }
+      if (msg.heading !== undefined) {
+        document.getElementById('tHeading').textContent = msg.heading;
+        document.getElementById('compassNeedle').style.transform = `rotate(${msg.heading}deg)`;
+      }
+      if (msg.pitch   !== undefined) {
+        document.getElementById('tPitch').textContent = msg.pitch.toFixed(2);
+        document.getElementById('hSky').style.transform = `rotate(${msg.roll||0}rad) translateY(${msg.pitch*30}px)`;
+      }
+    }
+
+    if (msg.type === "status") {
+      state.armed  = msg.state?.armed  ?? false;
+      state.flying = msg.state?.flying ?? false;
+      const mode = msg.mode || "--";
+      document.getElementById('modeBadge').textContent  = mode;
+      document.getElementById('modeBadge2').textContent = mode;
+      updateArmUI();
+    }
+  };
+}
+
+function safeSend(data) {
+  if (state.ws?.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify(data));
   }
 }
 
-joystick(leftJoy,(x,y)=>{
-  control.yaw=x;
-  control.throttle=-y;
+/* ─── CONTROL LOOP ───────────────────────────────── */
+let lastCtrl = {};
+setInterval(() => {
+  // Only send if values changed (saves bandwidth)
+  const changed = Object.keys(ctrl).some(k => Math.abs((ctrl[k]||0) - (lastCtrl[k]||0)) > 0.001);
+  if (changed || state.flying) {
+    const payload = {
+      type: "control",
+      throttle: applyDeadband(ctrl.throttle),
+      yaw:      applyDeadband(ctrl.yaw),
+      pitch:    applyDeadband(ctrl.pitch),
+      roll:     applyDeadband(ctrl.roll),
+    };
+    safeSend(payload);
+    lastCtrl = { ...ctrl };
+    updateRCBars(payload);
+  }
+}, 1000 / SEND_HZ);
+
+// Latency ping every 2s
+setInterval(() => {
+  state.pingTs = Date.now();
+  safeSend({ type: "ping" });
+}, 2000);
+
+function applyDeadband(v) {
+  return Math.abs(v) < DEADBAND ? 0 : parseFloat(v.toFixed(3));
+}
+
+/* ─── UI UPDATES ─────────────────────────────────── */
+function updateConnUI(connected) {
+  const dot = document.getElementById('connDot');
+  const lbl = document.getElementById('connStatus');
+  dot.className = 'status-dot' + (connected ? ' connected' : '');
+  lbl.textContent = connected ? 'CONNECTED' : 'DISCONNECTED';
+}
+
+function updateArmUI() {
+  document.getElementById('armBtn').disabled    = state.armed;
+  document.getElementById('disarmBtn').disabled = !state.armed;
+  document.getElementById('takeoffBtn').disabled = !state.armed || state.flying;
+  document.getElementById('landBtn').disabled    = !state.flying;
+
+  const dot = document.getElementById('armDot');
+  const lbl = document.getElementById('armStatus');
+  dot.className = 'status-dot' + (state.armed ? ' armed' : '');
+  lbl.textContent = state.armed ? 'ARMED' : 'DISARMED';
+}
+
+function rcMicro(v) { return Math.round(1500 + v * 500); }
+
+function updateRCBars(payload) {
+  const channels = {
+    T: ['rcT', 'rcTv', payload.throttle],
+    Y: ['rcY', 'rcYv', payload.yaw],
+    P: ['rcP', 'rcPv', payload.pitch],
+    R: ['rcR', 'rcRv', payload.roll],
+  };
+  for (const [, [barId, valId, v]] of Object.entries(channels)) {
+    const micro = rcMicro(v);
+    document.getElementById(valId).textContent = micro;
+    const bar = document.getElementById(barId);
+    if (v >= 0) {
+      bar.style.left  = '50%';
+      bar.style.width = (v * 50) + '%';
+    } else {
+      bar.style.left  = (50 + v * 50) + '%';
+      bar.style.width = (-v * 50) + '%';
+    }
+  }
+}
+
+/* ─── BUTTONS ────────────────────────────────────── */
+document.getElementById('armBtn').onclick    = () => { safeSend({ type:"action", action:"arm" });    log("→ ARM sent", "var(--accent2)"); };
+document.getElementById('disarmBtn').onclick = () => { safeSend({ type:"action", action:"disarm" }); log("→ DISARM sent", "var(--danger)"); };
+document.getElementById('landBtn').onclick   = () => { safeSend({ type:"action", action:"land" });   log("→ LAND sent",   "var(--warn)"); };
+document.getElementById('takeoffBtn').onclick = () => {
+  const alt = parseFloat(document.getElementById('altitude').value) || 2;
+  safeSend({ type:"action", action:"takeoff", alt });
+  log(`→ TAKEOFF to ${alt}m`, "var(--accent)");
+};
+
+/* ─── JOYSTICK ───────────────────────────────────── */
+function makeJoystick(elId, stickId, onChange) {
+  const el    = document.getElementById(elId);
+  const stick = document.getElementById(stickId);
+  const R = el.offsetWidth / 2 || 75;
+  let dragging = false;
+
+  function onMove(cx, cy) {
+    const rect = el.getBoundingClientRect();
+    const r = el.offsetWidth / 2;
+    let x = cx - rect.left - r;
+    let y = cy - rect.top  - r;
+    const dist = Math.hypot(x, y);
+    const maxR = r - 28;
+    if (dist > maxR) {
+      const a = Math.atan2(y, x);
+      x = Math.cos(a) * maxR;
+      y = Math.sin(a) * maxR;
+    }
+    stick.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+    stick.classList.add('active');
+    onChange(x / maxR, y / maxR);
+  }
+
+  function reset() {
+    dragging = false;
+    stick.style.transform = 'translate(-50%,-50%)';
+    stick.classList.remove('active');
+    onChange(0, 0);
+  }
+
+  // Mouse
+  el.addEventListener('mousedown',  (e) => { dragging = true; onMove(e.clientX, e.clientY); });
+  window.addEventListener('mousemove', (e) => { if (dragging) onMove(e.clientX, e.clientY); });
+  window.addEventListener('mouseup',   () => { if (dragging) reset(); });
+
+  // Touch
+  el.addEventListener('touchstart',  (e) => { e.preventDefault(); dragging = true; onMove(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
+  el.addEventListener('touchmove',   (e) => { e.preventDefault(); if (dragging) onMove(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
+  el.addEventListener('touchend',    () => reset());
+}
+
+makeJoystick('leftJoy', 'leftStick', (x, y) => {
+  ctrl.yaw      = x;
+  ctrl.throttle = -y;
 });
 
-joystick(rightJoy,(x,y)=>{
-  control.roll=x;
-  control.pitch=-y;
+makeJoystick('rightJoy', 'rightStick', (x, y) => {
+  ctrl.roll  = x;
+  ctrl.pitch = -y;
 });
+
+/* ─── KEYBOARD ───────────────────────────────────── */
+const keysHeld = new Set();
+const KEY_STEP = 0.05;
+
+document.addEventListener('keydown', (e) => {
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+  keysHeld.add(e.key);
+});
+document.addEventListener('keyup', (e) => keysHeld.delete(e.key));
+
+setInterval(() => {
+  if (keysHeld.size === 0) return;
+  if (keysHeld.has('w') || keysHeld.has('W'))          ctrl.throttle = Math.min(1, ctrl.throttle + KEY_STEP);
+  if (keysHeld.has('s') || keysHeld.has('S'))          ctrl.throttle = Math.max(-1, ctrl.throttle - KEY_STEP);
+  if (keysHeld.has('a') || keysHeld.has('A'))          ctrl.yaw      = Math.max(-1, ctrl.yaw - KEY_STEP);
+  if (keysHeld.has('d') || keysHeld.has('D'))          ctrl.yaw      = Math.min(1,  ctrl.yaw + KEY_STEP);
+  if (keysHeld.has('ArrowUp'))                          ctrl.pitch    = Math.min(1,  ctrl.pitch + KEY_STEP);
+  if (keysHeld.has('ArrowDown'))                        ctrl.pitch    = Math.max(-1, ctrl.pitch - KEY_STEP);
+  if (keysHeld.has('ArrowLeft'))                        ctrl.roll     = Math.max(-1, ctrl.roll - KEY_STEP);
+  if (keysHeld.has('ArrowRight'))                       ctrl.roll     = Math.min(1,  ctrl.roll + KEY_STEP);
+}, 50);
+
+// Decay keyboard controls when keys released
+setInterval(() => {
+  if (keysHeld.has('w') || keysHeld.has('W') || keysHeld.has('s') || keysHeld.has('S')) return;
+  ctrl.throttle *= 0.92;
+  if (Math.abs(ctrl.throttle) < 0.01) ctrl.throttle = 0;
+}, 50);
+
+/* ─── INIT ───────────────────────────────────────── */
+connect();
+updateArmUI();
+log("Cockpit initialized");
 </script>
-
 </body>
 </html>
